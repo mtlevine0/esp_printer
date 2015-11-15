@@ -6,8 +6,8 @@
 const char* ssid     = "Ni";
 const char* password = "6144405066";
 
-const char* host = "192.168.11.168";
-//const char* host = "192.168.11.127";
+//const char* host = "192.168.11.168";
+const char* host = "192.168.11.127";
 int value = 0;
 
 #define delayMs 50
@@ -59,6 +59,7 @@ void setup() {
   Serial.println("WiFi connected");  
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+
 }
 
 //uint8_t buffer[64];
@@ -67,9 +68,11 @@ uint16_t CRC;
 uint8_t margin_left = 1;
 uint8_t margin_right = 3;
 uint8_t buffer[640];
-uint8_t numRows = 10;
+uint8_t numRows = 8;
+//String printId;
 
 void loop() {
+  
   cmd = Serial.read();
   if (cmd == '?') {
     if (sendInitialize()){
@@ -80,187 +83,232 @@ void loop() {
     }
   }
 
-  if(cmd == 't')
-  {
-    for(volatile int line=0; line < numRows; line++)
-    {
-      Serial.print("connecting to ");
-      Serial.println(host);
-      
-      // Use WiFiClient class to create TCP connections
-      WiFiClient client;
-      const int httpPort = 80;
-      if (!client.connect(host, httpPort)) {
-        Serial.println("connection failed");
-        return;
-      }
-      
-      // We now create a URI for the request
-      String url = "/api/print/job0001/";
-        url += line;
-  //    url += "?private_key=";
-  //    url += privateKey;
-  //    url += "&value=";
-  //    url += value;
-      
-      Serial.print("Requesting URL: ");
-      Serial.println(url);
-      
-      // This will send the request to the server
-      client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-                   "Host: " + host + "\r\n" + 
-                   "Connection: close\r\n\r\n");
-      delay(10);
-      Serial.println("Response:");
-      // Read all the lines of the reply from server and print them to Serial
-      while(client.available()){
-        String line = client.readStringUntil('\r');
-        if(line.indexOf("data") != -1){
-          ////Serial.println(line);
-          line.replace("data", "");
-          line.replace(":","");
-          ////Serial.println("found");
-          line.replace(" ", "");
-          line.replace(",", "");
-          //line.replace("x", "");
-          int index = 0;
-          for(int q = 1; q < line.length()-4; q+=4){
-            ////Serial.print(line.substring(q+2, q+4));
-            ////Serial.print(", ");
-            String value = line.substring(q+2, q+4);
-            ////Serial.println(hexToDec(value));
-            uint8_t temp = hexToDec(value);
-            buffer[index++] = temp;
-            //char* buffer;
-            //value.toCharArray(buffer, 5);
-            //Serial.println(strtol(&buffer[1], NULL, 16));
-          }
-        }
-      }
-      
-      Serial.println();
-      Serial.println("closing connection");
-
-      Serial.println("Init");        
-      sendInitialize();
-      getStatusCode();
-      //################################
-      CRC = 0;
-      Serial.println("Data");
-      CRC += beginData();
-      for(int i=0; i<640; ++i)
-      {
-        //CRC += pgm_read_byte_near(pgm_read_word(row_table +line) + i);
-        //GBSerialOut(pgm_read_byte_near(pgm_read_word(row_table +line) + i));
-        
-        //CRC += row[line][i];
-        //GBSerialOut(row[line][i]);
-
-        ////CRC += pgm_read_byte_near((row_table[line]+i));
-        ////GBSerialOut(pgm_read_byte_near((row_table[line]+i)));
-
-        CRC += buffer[i];
-        GBSerialOut(buffer[i]);
-      }
-  
-      if(endData(CRC)) //0x27E06
-      { 
-        Serial.println("Data sent");
-      }
-      printStatusCode(-1);
-      //################################
-      sendInquiry();
-      GBPCommand(GBData,0);
-      printStatusCode(-1);
-      sendPrint(0,0,0xE4,0x40);
-      printStatusCode(-1);
-      sendInquiry();
-
-      // code from furrtek, wait for line to finish and print on
-      while(1)
-      {
-         uint8_t inq = sendInquiry();
-         if (inq & 2) {
-           break;
-         }
-         delay(100);
-         // printing started
-         Serial.println("Printing");
-      }
-      while(1)
-      {
-         uint8_t inq = sendInquiry();
-         if (!(inq & 2)) {
-           break;
-         }
-         delay(100);
-         Serial.println("Printing");
-      }
-      Serial.println("Done Printing");
-      sendPrint(0,3,0xE4,0x40);
-      sendInquiry();
-    } 
-  }
-
-  if(cmd == 'w'){
-    Serial.print("connecting to ");
+  //if(cmd == 't')
+  //{
+    //##
+    //## Get a printId
+    //##
+    Serial.print("Requesting printId");
     Serial.println(host);
     
     // Use WiFiClient class to create TCP connections
     WiFiClient client;
-    const int httpPort = 80;
+    const int httpPort = 3000;
     if (!client.connect(host, httpPort)) {
       Serial.println("connection failed");
       return;
     }
     
     // We now create a URI for the request
-    String url = "/api/print/job0001/row0";
-//    url += streamId;
-//    url += "?private_key=";
-//    url += privateKey;
-//    url += "&value=";
-//    url += value;
+    //String url = "/api/print/job0001/";
+    String url = "/api/esp/queue/";
     
     Serial.print("Requesting URL: ");
     Serial.println(url);
     
     // This will send the request to the server
     client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-                 "Host: " + host + "\r\n" + 
+                 "Host: " + host + ":"+ httpPort +"\r\n" + 
+                 "Accept: */*\r\n" +
+                 "Content-Type: text/html;charset=utf8\r\n" +
                  "Connection: close\r\n\r\n");
-    delay(10);
+    delay(500);
     Serial.println("Response:");
     // Read all the lines of the reply from server and print them to Serial
     while(client.available()){
       String line = client.readStringUntil('\r');
-      if(line.indexOf("data") != -1){
-        Serial.println(line);
-        line.replace("data", "");
+      //Serial.println(line);
+      if(line.indexOf("id") != -1){
+        line.replace("id", "");
         line.replace(":","");
-        Serial.println("found");
-        line.replace(" ", "");
-        line.replace(",", "");
-        //line.replace("x", "");
-        int index = 0;
-        for(int q = 1; q < line.length()-4; q+=4){
-          Serial.print(line.substring(q+2, q+4));
-          Serial.print(", ");
-          String value = line.substring(q+2, q+4);
-          Serial.println(hexToDec(value));
-          uint8_t temp = hexToDec(value);
-          buffer[index++] = temp;
-          //char* buffer;
-          //value.toCharArray(buffer, 5);
-          //Serial.println(strtol(&buffer[1], NULL, 16));
+        line.replace(" ","");
+        //printId = line;
+        //Serial.println(printId);
+      }
+    }
+    wdt_reset();
+//    url = "";
+//    delay(500);
+//    //##
+//    //##  Request print details
+//    //##
+//    Serial.print("connecting to ");
+//    Serial.println(host);
+//    
+//    // Use WiFiClient class to create TCP connections
+//    //WiFiClient client;
+//    //const int httpPort = 3000;
+//    if (!client.connect(host, httpPort)) {
+//      Serial.println("connection failed");
+//      return;
+//    }
+//    
+//    // We now create a URI for the request
+//    //String url = "/api/print/job0001/";
+//    url = "/api/esp/print/";
+//    url += printId;
+//    
+//    Serial.print("Requesting URL: ");
+//    Serial.println(url);
+//    
+//    // This will send the request to the server
+//    client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+//                 "Host: " + host + ":"+ httpPort +"\r\n" +
+//                 "Accept: */*\r\n" +
+//                 "Content-Type: text/html;charset=utf8\r\n" +
+//                 "Connection: close\r\n\r\n");
+//    delay(100);
+//    Serial.println("Response:");
+//    // Read all the lines of the reply from server and print them to Serial
+//    while(client.available()){
+//      String line = client.readStringUntil('\r');
+//      if(line.indexOf("lines") != -1){
+//        line.replace("lines", "");
+//        line.replace(":","");
+//        line.replace(" ","");
+//        numRows = line.toInt();
+//      }
+//    }
+    //url = "";
+    //##
+    //##  Start the print
+    //##
+    for(volatile uint8_t line=0; line < 7; line++)
+    {
+      delay(300);
+      Serial.print("connecting to ");
+      Serial.println(host);
+      
+      // Use WiFiClient class to create TCP connections
+      WiFiClient client;
+      const int httpPort = 3000;
+      if (!client.connect(host, httpPort)) {
+        Serial.println("connection failed");
+        return;
+      }
+      
+      // We now create a URI for the request
+      //String url = "/api/print/job0001/";
+      String url = "/api/esp/print/";
+      //url += printId;
+      url += "test";
+      url += "/";
+      url += line;
+      
+      Serial.print("Requesting URL: ");
+      Serial.println(url);
+      
+      // This will send the request to the server
+      client.print(String("GET ") + url + " HTTP/1.0\r\n" +
+                   "Host: " + host + ":"+ httpPort +"\r\n" + 
+                   "Accept: */*\r\n" +
+                   "Content-Type: text/html;charset=utf8\r\n" +
+                   "Connection: close\r\n\r\n");
+      delay(300);
+      Serial.println("Response:");
+      // Read all the lines of the reply from server and print them to Serial
+      while(client.available()){
+        String line = client.readStringUntil('\r');
+        Serial.println(line);
+        if(line.indexOf("data") != -1){
+          line.replace("data", "");
+          line.replace(":","");
+          line.replace(" ", "");
+          line.replace(",", "");                  
+          int index = 0;
+          for(int q = 1; q < line.length()-4; q+=4){
+            String value = line.substring(q+2, q+4);
+            uint8_t temp = hexToDec(value);
+            buffer[index++] = temp;
+          }
+
+          
+          Serial.println();
+          Serial.println("closing connection");
+    
+          Serial.println("Init");        
+          sendInitialize();
+          getStatusCode();
+          //################################
+          CRC = 0;
+          Serial.println("Data");
+          CRC += beginData();
+          for(int i=0; i<640; ++i)
+          {
+            CRC += buffer[i];
+            GBSerialOut(buffer[i]);
+          }
+      
+          if(endData(CRC)) //0x27E06
+          { 
+            Serial.println("Data sent");
+          }
+          printStatusCode(-1);
+          //################################
+          sendInquiry();
+          GBPCommand(GBData,0);
+          printStatusCode(-1);
+          sendPrint(0,0,0xE4,0x40);
+          printStatusCode(-1);
+          sendInquiry();
+    
+          // code from furrtek, wait for line to finish and print on
+          while(1)
+          {
+             uint8_t inq = sendInquiry();
+             if (inq & 2) {
+               break;
+             }
+             delay(100);
+             // printing started
+             Serial.println("Printing");
+          }
+          Serial.println("Done Printing");
+          memset(buffer, 0, 640);
+        }else{
+          int(line);
+          line--;
         }
       }
     }
+    memset(buffer, 0, 640);
+    //sendPrint(0,3,0xE4,0x40);
+    //sendInquiry();
+    url = "";
+    //##
+    //##  Clear the print from the queue
+    //##
+    Serial.print("connecting to ");
+    Serial.println(host);
     
-    Serial.println();
-    Serial.println("closing connection");
-  }
-  
+    // Use WiFiClient class to create TCP connections
+    //WiFiClient client;
+    //c//onst int httpPort = 3000;
+    if (!client.connect(host, httpPort)) {
+      Serial.println("connection failed");
+      return;
+    }
+    
+    // We now create a URI for the request
+    //String url = "/api/print/job0001/";
+    url = "/api/esp/print/";
+    //url += printId;
+    
+    Serial.print("Requesting URL: ");
+    Serial.println(url);
+    
+    // This will send the request to the server
+    client.print(String("POST ") + url + " HTTP/1.1\r\n" +
+                 "Host: " + host + ":"+ httpPort +"\r\n" + 
+                 "Connection: close\r\n\r\n");
+    delay(100);
+    Serial.println("Response:");
+    // Read all the lines of the reply from server and print them to Serial
+    while(client.available()){
+      String line = client.readStringUntil('\r');
+    }
+    Serial.println("why???");
+  //}
 }
 
 unsigned int hexToDec(String hexString) {
@@ -299,56 +347,6 @@ void sendRow (uint8_t row2send[]) {
     }
     printStatusCode(-1);
 }
-
-//void hadcon() {
-//  
-//  for (int j=0;j<17;j++) {
-//    
-//    for (int i=0;i<640;i++) {
-//      buffer[i] = pgm_read_byte_near(pgm_read_word(row_table +j) + i);
-//    }
-//    
-//    sendInitialize();
-//    
-//    getStatusCode();
-//
-//    sendRow(buffer);    
-//    
-//    sendInquiry();
-//    GBPCommand(GBData,0);
-//    printStatusCode(-1);
-//
-//    
-//    uint8_t margin_left = 1;
-//    uint8_t margin_right = 3;
-//    if (j == 0) {
-//      sendPrint(margin_left,0,0xE4,0x40);      
-//    }
-//    else if (j == 16) {
-//      sendPrint(0,margin_right,0xE4,0x40);      
-//    }
-//    else {
-//      sendPrint(0,0,0xE4,0x40);      
-//    }
-//
-//    // code from furrtek, wait for line to finish and print on
-//    while(1) {
-//       uint8_t inq = sendInquiry();
-//       if (inq & 2) {
-//         break;
-//       }
-//       delay(100);
-//       // printing started
-//    }
-//    while(1) {
-//       uint8_t inq = sendInquiry();
-//       if (!(inq & 2)) {
-//         break;
-//       }
-//       delay(100);
-//    }
-//  }
-//}
 
 //###############################################################
 //###############################################################
