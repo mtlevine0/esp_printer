@@ -1,12 +1,14 @@
-#include "wut.h"
 #include <ESP8266WiFi.h>
+#include <pgmspace.h>
+#include "girl_dither.h"
+#include <stdlib.h>
 
-//const char* ssid     = "Ni";
-//const char* password = "6144405066";
-//
-//const char* host = "data.sparkfun.com";
-//const char* streamId   = "....................";
-//const char* privateKey = "....................";
+const char* ssid     = "Ni";
+const char* password = "6144405066";
+
+const char* host = "192.168.11.168";
+//const char* host = "192.168.11.127";
+int value = 0;
 
 #define delayMs 50
 
@@ -37,33 +39,35 @@ void setupPrinter(int in, int out, int clock)
 void setup() {
   setupPrinter(GBIn, GBOut, GBClock);
   Serial.begin(115200);
-//  delay(10);
-//
-//  // We start by connecting to a WiFi network
-//
-//  Serial.println();
-//  Serial.println();
-//  Serial.print("Connecting to ");
-//  Serial.println(ssid);
-//  
-//  WiFi.begin(ssid, password);
-//  
-//  while (WiFi.status() != WL_CONNECTED) {
-//    delay(500);
-//    Serial.print(".");
-//  }
-//
-//  Serial.println("");
-//  Serial.println("WiFi connected");  
-//  Serial.println("IP address: ");
-//  Serial.println(WiFi.localIP());
+  delay(10);
+
+  // We start by connecting to a WiFi network
+
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  
+  WiFi.begin(ssid, password);
+  
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");  
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
 }
 
-uint8_t buffer[64];
+//uint8_t buffer[64];
 uint8_t cmd;
 uint16_t CRC;
 uint8_t margin_left = 1;
 uint8_t margin_right = 3;
+uint8_t buffer[640];
+uint8_t numRows = 10;
 
 void loop() {
   cmd = Serial.read();
@@ -78,7 +82,65 @@ void loop() {
 
   if(cmd == 't')
   {
-    for(volatile int line=0; line < 14; line++){
+    for(volatile int line=0; line < numRows; line++)
+    {
+      Serial.print("connecting to ");
+      Serial.println(host);
+      
+      // Use WiFiClient class to create TCP connections
+      WiFiClient client;
+      const int httpPort = 80;
+      if (!client.connect(host, httpPort)) {
+        Serial.println("connection failed");
+        return;
+      }
+      
+      // We now create a URI for the request
+      String url = "/api/print/job0001/";
+        url += line;
+  //    url += "?private_key=";
+  //    url += privateKey;
+  //    url += "&value=";
+  //    url += value;
+      
+      Serial.print("Requesting URL: ");
+      Serial.println(url);
+      
+      // This will send the request to the server
+      client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+                   "Host: " + host + "\r\n" + 
+                   "Connection: close\r\n\r\n");
+      delay(10);
+      Serial.println("Response:");
+      // Read all the lines of the reply from server and print them to Serial
+      while(client.available()){
+        String line = client.readStringUntil('\r');
+        if(line.indexOf("data") != -1){
+          ////Serial.println(line);
+          line.replace("data", "");
+          line.replace(":","");
+          ////Serial.println("found");
+          line.replace(" ", "");
+          line.replace(",", "");
+          //line.replace("x", "");
+          int index = 0;
+          for(int q = 1; q < line.length()-4; q+=4){
+            ////Serial.print(line.substring(q+2, q+4));
+            ////Serial.print(", ");
+            String value = line.substring(q+2, q+4);
+            ////Serial.println(hexToDec(value));
+            uint8_t temp = hexToDec(value);
+            buffer[index++] = temp;
+            //char* buffer;
+            //value.toCharArray(buffer, 5);
+            //Serial.println(strtol(&buffer[1], NULL, 16));
+          }
+        }
+      }
+      
+      Serial.println();
+      Serial.println("closing connection");
+
       Serial.println("Init");        
       sendInitialize();
       getStatusCode();
@@ -86,15 +148,19 @@ void loop() {
       CRC = 0;
       Serial.println("Data");
       CRC += beginData();
-      for(int i=0; i<640; ++i) {
+      for(int i=0; i<640; ++i)
+      {
         //CRC += pgm_read_byte_near(pgm_read_word(row_table +line) + i);
         //GBSerialOut(pgm_read_byte_near(pgm_read_word(row_table +line) + i));
         
         //CRC += row[line][i];
         //GBSerialOut(row[line][i]);
 
-        CRC += pgm_read_byte_near((row_table[line]+i));
-        GBSerialOut(pgm_read_byte_near((row_table[line]+i)));
+        ////CRC += pgm_read_byte_near((row_table[line]+i));
+        ////GBSerialOut(pgm_read_byte_near((row_table[line]+i)));
+
+        CRC += buffer[i];
+        GBSerialOut(buffer[i]);
       }
   
       if(endData(CRC)) //0x27E06
@@ -111,7 +177,8 @@ void loop() {
       sendInquiry();
 
       // code from furrtek, wait for line to finish and print on
-      while(1) {
+      while(1)
+      {
          uint8_t inq = sendInquiry();
          if (inq & 2) {
            break;
@@ -120,7 +187,8 @@ void loop() {
          // printing started
          Serial.println("Printing");
       }
-      while(1) {
+      while(1)
+      {
          uint8_t inq = sendInquiry();
          if (!(inq & 2)) {
            break;
@@ -129,50 +197,89 @@ void loop() {
          Serial.println("Printing");
       }
       Serial.println("Done Printing");
-    }
-    sendPrint(0,3,0xE4,0x40);
-    sendInquiry(); 
+      sendPrint(0,3,0xE4,0x40);
+      sendInquiry();
+    } 
   }
 
-//  if(cmd == 'w'){
-//    Serial.print("connecting to ");
-//    Serial.println(host);
-//    
-//    // Use WiFiClient class to create TCP connections
-//    WiFiClient client;
-//    const int httpPort = 80;
-//    if (!client.connect(host, httpPort)) {
-//      Serial.println("connection failed");
-//      return;
-//    }
-//    
-//    // We now create a URI for the request
-//    String url = "/input/";
+  if(cmd == 'w'){
+    Serial.print("connecting to ");
+    Serial.println(host);
+    
+    // Use WiFiClient class to create TCP connections
+    WiFiClient client;
+    const int httpPort = 80;
+    if (!client.connect(host, httpPort)) {
+      Serial.println("connection failed");
+      return;
+    }
+    
+    // We now create a URI for the request
+    String url = "/api/print/job0001/row0";
 //    url += streamId;
 //    url += "?private_key=";
 //    url += privateKey;
 //    url += "&value=";
 //    url += value;
-//    
-//    Serial.print("Requesting URL: ");
-//    Serial.println(url);
-//    
-//    // This will send the request to the server
-//    client.print(String("GET ") + url + " HTTP/1.1\r\n" +
-//                 "Host: " + host + "\r\n" + 
-//                 "Connection: close\r\n\r\n");
-//    delay(10);
-//    
-//    // Read all the lines of the reply from server and print them to Serial
-//    while(client.available()){
-//      String line = client.readStringUntil('\r');
-//      Serial.print(line);
-//    }
-//    
-//    Serial.println();
-//    Serial.println("closing connection");
-//  }
+    
+    Serial.print("Requesting URL: ");
+    Serial.println(url);
+    
+    // This will send the request to the server
+    client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+                 "Host: " + host + "\r\n" + 
+                 "Connection: close\r\n\r\n");
+    delay(10);
+    Serial.println("Response:");
+    // Read all the lines of the reply from server and print them to Serial
+    while(client.available()){
+      String line = client.readStringUntil('\r');
+      if(line.indexOf("data") != -1){
+        Serial.println(line);
+        line.replace("data", "");
+        line.replace(":","");
+        Serial.println("found");
+        line.replace(" ", "");
+        line.replace(",", "");
+        //line.replace("x", "");
+        int index = 0;
+        for(int q = 1; q < line.length()-4; q+=4){
+          Serial.print(line.substring(q+2, q+4));
+          Serial.print(", ");
+          String value = line.substring(q+2, q+4);
+          Serial.println(hexToDec(value));
+          uint8_t temp = hexToDec(value);
+          buffer[index++] = temp;
+          //char* buffer;
+          //value.toCharArray(buffer, 5);
+          //Serial.println(strtol(&buffer[1], NULL, 16));
+        }
+      }
+    }
+    
+    Serial.println();
+    Serial.println("closing connection");
+  }
   
+}
+
+unsigned int hexToDec(String hexString) {
+  
+  unsigned int decValue = 0;
+  int nextInt;
+  
+  for (int i = 0; i < hexString.length(); i++) {
+    
+    nextInt = int(hexString.charAt(i));
+    if (nextInt >= 48 && nextInt <= 57) nextInt = map(nextInt, 48, 57, 0, 9);
+    if (nextInt >= 65 && nextInt <= 70) nextInt = map(nextInt, 65, 70, 10, 15);
+    if (nextInt >= 97 && nextInt <= 102) nextInt = map(nextInt, 97, 102, 10, 15);
+    nextInt = constrain(nextInt, 0, 15);
+    
+    decValue = (decValue * 16) + nextInt;
+  }
+  
+  return decValue;
 }
 
 void sendRow (uint8_t row2send[]) {
